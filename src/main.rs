@@ -1,5 +1,6 @@
 extern crate num;
 extern crate minifb;
+extern crate crossbeam;
 
 use minifb::{Key, WindowOptions, Window};
 use num::Complex;
@@ -49,6 +50,29 @@ fn render(pixels:      &mut [u32],
     }
 }
 
+fn render_parallel(pixels:      &mut Vec<u32>,
+                   bounds:      (usize, usize),
+                   upper_left:  Complex<f64>,
+                   lower_right: 
+                   Complex<f64>) {
+
+    let threads = 4;
+    let rows_per_band = bounds.1 / threads + 1;
+    let bands: Vec<&mut [u32]> = pixels.chunks_mut(rows_per_band * bounds.0).collect();
+    crossbeam::scope(|spawner| {
+        for (i, band) in bands.into_iter().enumerate() {
+            let top              = rows_per_band * i;
+            let height           = band.len() / bounds.0;
+            let band_bounds      = (bounds.0, height);
+            let band_upper_left  = pixel_to_point(bounds, (0, top), upper_left, lower_right);
+            let band_lower_right = pixel_to_point(bounds, (bounds.0, top + height), upper_left, lower_right);
+            spawner.spawn(move || {
+                render(band, band_bounds, band_upper_left, band_lower_right);
+            });
+        }
+    });
+}
+
 fn main() {
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
     let mut window = Window::new(
@@ -56,27 +80,27 @@ fn main() {
     ).unwrap_or_else(|e| { panic!("{}", e); });
     let mut upper_left  = Complex {re: -1.20, im: 0.35};
     let mut lower_right = Complex {re: -1.0,  im: 0.20};
-    render(buffer.as_mut_slice(), (WIDTH, HEIGHT), upper_left, lower_right);
+    render(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
     while window.is_open() && !window.is_key_down(Key::Escape) {
         if window.is_key_down(Key::Left) {
             upper_left.re  -= 0.01;
             lower_right.re -= 0.01;
-            render(buffer.as_mut_slice(), (WIDTH, HEIGHT), upper_left, lower_right);
+            render_parallel(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
         }
         if window.is_key_down(Key::Right) {
             upper_left.re  += 0.01;
             lower_right.re += 0.01;
-            render(buffer.as_mut_slice(), (WIDTH, HEIGHT), upper_left, lower_right);
+            render_parallel(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
         }
         if window.is_key_down(Key::Up) {
             upper_left.im  += 0.01;
             lower_right.im += 0.01;
-            render(buffer.as_mut_slice(), (WIDTH, HEIGHT), upper_left, lower_right);
+            render_parallel(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
         }
         if window.is_key_down(Key::Down) {
             upper_left.im  -= 0.01;
             lower_right.im -= 0.01;
-            render(buffer.as_mut_slice(), (WIDTH, HEIGHT), upper_left, lower_right);
+            render_parallel(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
         }
         window.update_with_buffer(&buffer).unwrap();
     }
