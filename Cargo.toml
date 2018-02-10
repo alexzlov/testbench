@@ -7,3 +7,4 @@ authors = ["Aleksandr Usachev <aleksandr.usachev@dummy.com>"]
 num = "0.1"
 minifb = "0.10.4"
 crossbeam = "0.2.8"
+simd = "0.2.1"
