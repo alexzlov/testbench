@@ -1,10 +1,10 @@
 [package]
-name = "mandelbrot"
-version = "0.1.0"
+name    = "mandelbrot"
+version = "0.0.666"
 authors = ["Aleksandr Usachev <aleksandr.usachev@dummy.com>"]
 
 [dependencies]
-num = "0.1"
-minifb = "0.10.4"
+num       = "0.1"
+minifb    = "0.10.4"
 crossbeam = "0.2.8"
-simd = "0.2.1"
+simd      = "0.2.1"

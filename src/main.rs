@@ -120,6 +120,11 @@ fn main() {
         "Sample RGBA32 buffer", WIDTH, HEIGHT, WindowOptions::default()
     ).unwrap_or_else(|e| { panic!("{}", e); });
 
+    println!("Renderer version: 0.0.666, x86_64, AVX2");
+    println!("========================================");
+    println!("Running with {} threads.", NUM_THREADS);
+    println!("Buffer resolution: {} - {}.", WIDTH, HEIGHT);
+
     let mut upper_left  = Complex {re: -2.2, im:  1.0};
     let mut lower_right = Complex {re:  1.2, im: -1.0};
     let mut step        = 0.01;
