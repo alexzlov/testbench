@@ -1,3 +1,5 @@
+#![feature(iterator_step_by, test)]
+
 extern crate num;
 extern crate minifb;
 extern crate crossbeam;
@@ -7,13 +9,16 @@ use minifb::{Key, WindowOptions, Window};
 use num::Complex;
 use simd::{f32x4, u32x4};
 
-const WIDTH:  usize = 1024;
-const HEIGHT: usize = 768;
+const WIDTH:       usize = 1024;
+const HEIGHT:      usize = 768;
+const LIMIT:       u32   = 100;
+const NUM_THREADS: usize = 8;
 const COLORS: &'static [(f32, f32, f32)] = &[(0.0,    7.0,    100.0),
                                              (32.0,   107.0,  203.0),
                                              (237.0,  255.0,  255.0),
                                              (255.0,  170.0,  0.0),
                                              (0.0,    2.0,    0.0)];
+                                             
 
 fn pixel_to_point(bounds:      (usize, usize),
                   pixel:       (usize, usize),
@@ -28,43 +33,61 @@ fn pixel_to_point(bounds:      (usize, usize),
     }
 }
 
-fn estimate(c: Complex<f64>, limit: u32) -> Option<u32> {
-    let mut z = Complex {re: 0.0, im: 0.0};
-    for i in 0 .. limit {
-        z = z * z + c;
-        if z.norm_sqr() > 4.0 {
-            return Some(i);
-        }
+#[inline(never)]
+fn mandelbrot_vector(c_x: f32x4, c_y: f32x4, max_iter: u32) -> u32x4 {
+    let mut x = c_x;
+    let mut y = c_y;
+    let mut count = u32x4::splat(0);
+    for _ in 0..max_iter as usize {
+        let xy = x * y;
+        let xx = x * x;
+        let yy = y * y;
+        let sum = xx + yy;
+        let mask = sum.lt(f32x4::splat(4.0));
+        if !mask.any() { break }
+        count = count + mask.to_i().select(u32x4::splat(1), u32x4::splat(0));
+        x = xx - yy + c_x;
+        y = xy + xy + c_y;
     }
-    None
+    count
 }
 
+#[inline(never)]
 fn render(pixels:      &mut [u32],
           bounds:      (usize, usize),
           upper_left:  Complex<f64>,
           lower_right: Complex<f64>) {
 
     assert!(pixels.len() == bounds.0 * bounds.1);
-    for row in 0 .. bounds.1 {
-        for column in 0 .. bounds.0 {
-            let point = pixel_to_point(bounds, (column, row), upper_left, lower_right);
-            let (r, g, b);
-            pixels[row * bounds.0 + column] = match estimate(point, 255) {
-                None        => 0,
-                Some(count) => {
-                    let val   = (count as f32 % 12.0) * (COLORS.len() as f32) / 12.0;
-                    let left  = val as usize % COLORS.len();
-                    let right = (left + 1) % COLORS.len();
 
-                    let p = val - left as f32;
-                    let (r1, g1, b1) = COLORS[left];
-                    let (r2, g2, b2) = COLORS[right];
-                    r = (r1 + (r2 - r1) * p) as u32;
-                    g = (g1 + (g2 - g1) * p) as u32;
-                    b = (b1 + (b2 - b1) * p) as u32;
-                    (r << 16) + (g << 8) + b
-                }
-            };
+    let left             = upper_left.re  as f32;
+    let right            = lower_right.re as f32;
+    let top              = upper_left.im  as f32;
+    let bottom           = lower_right.im as f32;
+    let width_step:  f32 = (right - left) / WIDTH as f32;
+    let height_step: f32 = (bottom - top) / (HEIGHT as f32 / NUM_THREADS as f32) ;
+    let adjust           = f32x4::splat(width_step) * f32x4::new(0., 1., 2., 3.);
+
+    for row in 0 .. bounds.1 {
+        let y = f32x4::splat(top + height_step * row as f32);
+        for column in (0 .. bounds.0).step_by(4) {
+            let x = f32x4::splat(left + width_step * column as f32) + adjust;
+            let points = mandelbrot_vector(x, y, LIMIT);            
+            for k in 0..4 {
+                let (r, g, b);
+                let point_k = points.extract(k as u32);
+                let val   = (point_k as f32 % 12.0) * (COLORS.len() as f32) / 12.0;
+                let left  = val as usize % COLORS.len();
+                let right = (left + 1) % COLORS.len();
+
+                let p = val - left as f32;
+                let (r1, g1, b1) = COLORS[left];
+                let (r2, g2, b2) = COLORS[right];
+                r = (r1 + (r2 - r1) * p) as u32;
+                g = (g1 + (g2 - g1) * p) as u32;
+                b = (b1 + (b2 - b1) * p) as u32;
+                pixels[row * bounds.0 + column + k] = (r << 16) + (g << 8) + b
+            }            
         }
     }
 }
@@ -75,8 +98,7 @@ fn render_parallel(pixels:      &mut Vec<u32>,
                    lower_right: 
                    Complex<f64>) {
 
-    let threads = 4;
-    let rows_per_band = bounds.1 / threads + 1;
+    let rows_per_band = bounds.1 / NUM_THREADS + 1;
     let bands: Vec<&mut [u32]> = pixels.chunks_mut(rows_per_band * bounds.0).collect();
     crossbeam::scope(|spawner| {
         for (i, band) in bands.into_iter().enumerate() {
@@ -104,7 +126,7 @@ fn main() {
     
     let mut upper_left  = Complex {re: -1.20, im: 0.35};
     let mut lower_right = Complex {re: -1.0,  im: 0.20};
-    render(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
+    render_parallel(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut need_update = false;
         window.get_keys().map(|keys| {
