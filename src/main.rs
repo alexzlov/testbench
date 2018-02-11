@@ -120,22 +120,25 @@ fn main() {
         "Sample RGBA32 buffer", WIDTH, HEIGHT, WindowOptions::default()
     ).unwrap_or_else(|e| { panic!("{}", e); });
 
-    // Bounds to see the whole picture:
-    // let mut upper_left  = Complex {re: -2.2, im:  1.0};
-    // let mut lower_right = Complex {re:  1.2, im: -1.0};
-    
-    let mut upper_left  = Complex {re: -1.20, im: 0.35};
-    let mut lower_right = Complex {re: -1.0,  im: 0.20};
+    let mut upper_left  = Complex {re: -2.2, im:  1.0};
+    let mut lower_right = Complex {re:  1.2, im: -1.0};
+    let mut step        = 0.01;
     render_parallel(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut need_update = false;
         window.get_keys().map(|keys| {
             for k in keys {
                 match k {
-                    Key::Left  => {upper_left.re -= 0.01; lower_right.re -= 0.01;},
-                    Key::Right => {upper_left.re += 0.01; lower_right.re += 0.01;},
-                    Key::Up    => {upper_left.im += 0.01; lower_right.im += 0.01;},
-                    Key::Down  => {upper_left.im -= 0.01; lower_right.im -= 0.01;},
+                    Key::Left  => {upper_left.re -= step; lower_right.re -= step;},
+                    Key::Right => {upper_left.re += step; lower_right.re += step;},
+                    Key::Up    => {upper_left.im += step; lower_right.im += step;},
+                    Key::Down  => {upper_left.im -= step; lower_right.im -= step;},
+                    Key::W     => {upper_left.re /= 1.01; lower_right.re /= 1.01;
+                                   upper_left.im /= 1.01; lower_right.im /= 1.01;
+                                   step          /= 1.01;},
+                    Key::S     => {upper_left.re *= 1.01; lower_right.re *= 1.01;
+                                   upper_left.im *= 1.01; lower_right.im *= 1.01;
+                                   step          *= 1.01},
                     _          => (),
                 }
                 need_update = true;
