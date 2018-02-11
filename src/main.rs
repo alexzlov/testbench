@@ -130,7 +130,9 @@ fn main() {
             for k in keys {
                 match k {
                     Key::Left  => {upper_left.re -= step; lower_right.re -= step;},
+                    Key::A     => {upper_left.re -= step; lower_right.re -= step;},
                     Key::Right => {upper_left.re += step; lower_right.re += step;},
+                    Key::D     => {upper_left.re += step; lower_right.re += step;},
                     Key::Up    => {upper_left.im += step; lower_right.im += step;},
                     Key::Down  => {upper_left.im -= step; lower_right.im -= step;},
                     Key::W     => {upper_left.re /= 1.01; lower_right.re /= 1.01;
