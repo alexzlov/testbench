@@ -5,6 +5,9 @@ extern crate cpp;
 
 cpp!{{
     #include <stdio.h>
+    #include "imgui/imgui.h"
+    // #include "imgui/imgui.cpp"
+    // #include "imgui/imgui_draw.cpp"
 }}
 
 
@@ -12,10 +15,12 @@ extern crate num;
 extern crate minifb;
 extern crate crossbeam;
 extern crate simd;
+extern crate libc;
 
 use minifb::{Key, WindowOptions, Window};
 use num::Complex;
 use simd::{f32x4, u32x4};
+use libc::c_void;
 
 const WIDTH:       usize = 1024;
 const HEIGHT:      usize = 768;
@@ -122,18 +127,38 @@ fn render_parallel(pixels:      &mut Vec<u32>,
     });
 }
 
-fn main() {
+#[no_mangle]
+pub unsafe extern "C" fn imgui_renderer(_im_draw_data: c_void) {
+    println!("Drawing backend is not implemented.");
+}
 
+fn init_imgui() {
     unsafe {
-        cpp!([] {
-            printf("Sample cpp output\n");
+        let w = WIDTH  as u32;
+        let h = HEIGHT as u32;
+        let renderer = imgui_renderer as *const ();
+        cpp!([w as "int32_t", h as "int32_t", renderer as "void *"] {
+            typedef void rust_renderer(ImDrawData *data);
+            printf("Starting imgui initialization...\n");
+            ImGui::CreateContext();
+            auto io = ImGui::GetIO();
+            io.RenderDrawListsFn = (rust_renderer*)renderer;
+            io.DisplaySize = ImVec2((float)w, (float)h);               
+            unsigned char *font_texture = NULL;
+            int tex_w, tex_h, tex_bpp;
+            io.Fonts->GetTexDataAsAlpha8(&font_texture, &tex_w, &tex_h, &tex_bpp);
+            printf("OK: Finishing imgui initialization.\n");
         });
     }
+}
 
+fn main() {    
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
     let mut window = Window::new(
         "Sample RGBA32 buffer", WIDTH, HEIGHT, WindowOptions::default()
     ).unwrap_or_else(|e| { panic!("{}", e); });
+
+    // init_imgui();
 
     println!("Renderer version: 0.0.666, x86_64, AVX2");
     println!("========================================");
@@ -147,6 +172,35 @@ fn main() {
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut need_update = false;
         window.get_keys().map(|keys| {
+            let w = WIDTH  as u32;
+            let h = HEIGHT as u32;
+            unsafe {   
+                cpp!([w as "int32_t", h as "int32_t"] {
+                    printf("Starting imgui initialization...\n");
+                    ImGui::CreateContext();
+                    auto io = ImGui::GetIO();
+                    io.DisplaySize = ImVec2(w, h);               
+                    unsigned char *font_texture = NULL;
+                    int tex_w, tex_h, tex_bpp;
+                    io.Fonts->GetTexDataAsAlpha8(&font_texture, &tex_w, &tex_h, &tex_bpp);
+                    // if (!(io.DisplaySize.x > 0.0f && io.DisplaySize.y > 0.0f)) {
+                    //     printf("No buffer, returning...\n");
+                    //     return;
+                    // }
+                    ImGui::NewFrame();
+                    ImGui::Begin("Stats", 0);
+                    ImGui::SetWindowPos("Stats", ImVec2(10, 10));
+                    ImGui::SetWindowSize(ImVec2(300, 85));
+                    
+                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                    ImGui::Text("Milliseconds per frame: ");
+                    ImGui::PopStyleColor();
+
+                    ImGui::End();
+                    ImGui::Render();
+                    ImGui::EndFrame();
+                });
+            }
             for k in keys {
                 match k {
                     Key::Left  => {upper_left.re -= step; lower_right.re -= step;},
