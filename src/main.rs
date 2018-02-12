@@ -141,7 +141,7 @@ fn init_imgui() {
             typedef void rust_renderer(ImDrawData *data);
             printf("Starting imgui initialization...\n");
             ImGui::CreateContext();
-            auto io = ImGui::GetIO();
+            ImGuiIO& io = ImGui::GetIO();
             io.RenderDrawListsFn = (rust_renderer*)renderer;
             io.DisplaySize = ImVec2((float)w, (float)h);               
             unsigned char *font_texture = NULL;
@@ -164,6 +164,8 @@ fn main() {
     println!("========================================");
     println!("Running with {} threads.", NUM_THREADS);
     println!("Buffer resolution: {} - {}.", WIDTH, HEIGHT);
+    
+    init_imgui();
 
     let mut upper_left  = Complex {re: -2.2, im:  1.0};
     let mut lower_right = Complex {re:  1.2, im: -1.0};
@@ -176,17 +178,19 @@ fn main() {
             let h = HEIGHT as u32;
             unsafe {   
                 cpp!([w as "int32_t", h as "int32_t"] {
-                    printf("Starting imgui initialization...\n");
-                    ImGui::CreateContext();
-                    auto io = ImGui::GetIO();
-                    io.DisplaySize = ImVec2(w, h);               
-                    unsigned char *font_texture = NULL;
-                    int tex_w, tex_h, tex_bpp;
-                    io.Fonts->GetTexDataAsAlpha8(&font_texture, &tex_w, &tex_h, &tex_bpp);
+                    // printf("Starting imgui initialization...\n");
+                    // ImGui::CreateContext();
+                    // ImGuiIO& io = ImGui::GetIO();
+                    // io.DisplaySize = ImVec2(w, h);               
+                    // unsigned char *font_texture = NULL;
+                    // int tex_w, tex_h, tex_bpp;
+                    // io.Fonts->GetTexDataAsAlpha8(&font_texture, &tex_w, &tex_h, &tex_bpp);
                     // if (!(io.DisplaySize.x > 0.0f && io.DisplaySize.y > 0.0f)) {
                     //     printf("No buffer, returning...\n");
                     //     return;
                     // }
+                    ImGuiIO& io = ImGui::GetIO();
+                    io.DisplaySize = ImVec2(w, h); 
                     ImGui::NewFrame();
                     ImGui::Begin("Stats", 0);
                     ImGui::SetWindowPos("Stats", ImVec2(10, 10));
