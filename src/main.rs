@@ -1,5 +1,13 @@
 #![feature(iterator_step_by, test)]
 
+#[macro_use]
+extern crate cpp;
+
+cpp!{{
+    #include <stdio.h>
+}}
+
+
 extern crate num;
 extern crate minifb;
 extern crate crossbeam;
@@ -115,6 +123,13 @@ fn render_parallel(pixels:      &mut Vec<u32>,
 }
 
 fn main() {
+
+    unsafe {
+        cpp!([] {
+            printf("Sample cpp output\n");
+        });
+    }
+
     let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
     let mut window = Window::new(
         "Sample RGBA32 buffer", WIDTH, HEIGHT, WindowOptions::default()
