@@ -29,6 +29,16 @@ const COLORS: &'static [(f32, f32, f32)] = &[(0.0,    7.0,    100.0),
                                              (237.0,  255.0,  255.0),
                                              (255.0,  170.0,  0.0),
                                              (0.0,    2.0,    0.0)];
+
+struct Point2D {
+    x: i32,
+    y: i32
+}
+
+struct Point2DF {
+    x: f32,
+    y: f32,
+}                               
                                              
 
 fn pixel_to_point(bounds:      (usize, usize),
@@ -125,8 +135,7 @@ fn render_parallel(pixels:      &mut Vec<u32>,
     });
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn imgui_renderer(_im_draw_data: c_void) {
+fn imgui_renderer(_im_draw_data: c_void) {
     println!("Drawing backend is not implemented.");
 }
 
