@@ -6,8 +6,6 @@ extern crate cpp;
 cpp!{{
     #include <stdio.h>
     #include "imgui/imgui.h"
-    // #include "imgui/imgui.cpp"
-    // #include "imgui/imgui_draw.cpp"
 }}
 
 
@@ -158,8 +156,6 @@ fn main() {
         "Sample RGBA32 buffer", WIDTH, HEIGHT, WindowOptions::default()
     ).unwrap_or_else(|e| { panic!("{}", e); });
 
-    // init_imgui();
-
     println!("Renderer version: 0.0.666, x86_64, AVX2");
     println!("========================================");
     println!("Running with {} threads.", NUM_THREADS);
@@ -178,17 +174,6 @@ fn main() {
             let h = HEIGHT as u32;
             unsafe {   
                 cpp!([w as "int32_t", h as "int32_t"] {
-                    // printf("Starting imgui initialization...\n");
-                    // ImGui::CreateContext();
-                    // ImGuiIO& io = ImGui::GetIO();
-                    // io.DisplaySize = ImVec2(w, h);               
-                    // unsigned char *font_texture = NULL;
-                    // int tex_w, tex_h, tex_bpp;
-                    // io.Fonts->GetTexDataAsAlpha8(&font_texture, &tex_w, &tex_h, &tex_bpp);
-                    // if (!(io.DisplaySize.x > 0.0f && io.DisplaySize.y > 0.0f)) {
-                    //     printf("No buffer, returning...\n");
-                    //     return;
-                    // }
                     ImGuiIO& io = ImGui::GetIO();
                     io.DisplaySize = ImVec2(w, h); 
                     ImGui::NewFrame();
