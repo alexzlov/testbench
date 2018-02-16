@@ -3,6 +3,9 @@
 #[macro_use]
 extern crate cpp;
 
+#[macro_use]
+extern crate lazy_static;
+
 cpp!{{
     #include <stdio.h>
     #include "imgui/imgui.h"
@@ -38,8 +41,11 @@ struct Point2D {
 struct Point2DF {
     x: f32,
     y: f32,
-}                               
-                                             
+}
+
+lazy_static! {
+    static ref GlobalBuffer: Vec<u32> = { let mut _buffer = Vec::new(); _buffer };
+}
 
 fn pixel_to_point(bounds:      (usize, usize),
                   pixel:       (usize, usize),
@@ -135,15 +141,82 @@ fn render_parallel(pixels:      &mut Vec<u32>,
     });
 }
 
-fn imgui_renderer(_im_draw_data: c_void) {
-    println!("Drawing backend is not implemented.");
+fn draw_triangle(buffer: &mut [u32], p0: Point2DF, p1: Point2DF, p2: Point2DF,
+                 R0: f32, G0: f32, B0: f32, A0: f32,
+                 R1: f32, G1: f32, B1: f32, A1: f32,
+                 R2: f32, G2: f32, B2: f32, A2: f32,
+                 uv0: Point2DF, uv1: Point2DF, uv2: Point2DF) {
+    println!("Rasterizer is not implemented");
+}
+
+fn fetch_render_data(_im_draw_data: *const ()) {
+    let rasterizer = draw_triangle as *const ();
+    unsafe {
+        cpp!([_im_draw_data as "void *", rasterizer as "void *"] {             
+            
+            struct Point2DF {
+                float X;
+                float Y;
+            };
+
+            typedef void DrawTriangle(void *buffer, Point2DF p0, Point2DF p1, Point2DF p2,
+                                      float R0, float G0, float B0, float A0,
+                                      float R1, float G1, float B1, float A1,
+                                      float R2, float G2, float B2, float A2,
+                                      Point2DF uv0, Point2DF uv1, Point2DF uv2);      
+            DrawTriangle *rusterizer = (DrawTriangle *) rasterizer;
+            ImGuiIO& io = ImGui::GetIO();
+            int fb_width  = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
+            int fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
+            if (fb_width == 0 || fb_height == 0) return;
+            ImDrawData *data = (ImDrawData *)_im_draw_data;
+            data->ScaleClipRects(io.DisplayFramebufferScale);
+            for (int n = 0; n < data->CmdListsCount; n++) {
+                const ImDrawList *cmd_list = data->CmdLists[n];
+                unsigned int IndexOffset = 0;
+                for (int cmd_i = 0; cmd_i < cmd_list->CmdBuffer.Size; cmd_i++) {
+                    const ImDrawCmd *pcmd = &cmd_list->CmdBuffer[cmd_i];
+                    unsigned int ElementCount = (unsigned int)pcmd->ElemCount;
+                    if (pcmd->UserCallback) {
+                        printf("User input is not implemented.\n");
+                    } else {
+                        for (unsigned int i = 0; i < ElementCount; i+= 3) {
+                            unsigned int idx0 = cmd_list->IdxBuffer[IndexOffset + i];
+                            unsigned int idx1 = cmd_list->IdxBuffer[IndexOffset + i + 1];
+                            unsigned int idx2 = cmd_list->IdxBuffer[IndexOffset + i + 2];
+
+                            Point2DF p0 = {cmd_list->VtxBuffer[idx0].pos.x,
+                                           cmd_list->VtxBuffer[idx0].pos.y};
+                            Point2DF p1 = {cmd_list->VtxBuffer[idx1].pos.x,
+                                           cmd_list->VtxBuffer[idx1].pos.y};
+                            Point2DF p2 = {cmd_list->VtxBuffer[idx2].pos.x,
+                                           cmd_list->VtxBuffer[idx2].pos.y};
+
+                            Point2DF uv0 = {cmd_list->VtxBuffer[idx0].uv.x,
+                                            cmd_list->VtxBuffer[idx0].uv.y};
+                            Point2DF uv1 = {cmd_list->VtxBuffer[idx1].uv.x,
+                                            cmd_list->VtxBuffer[idx1].uv.y};
+                            Point2DF uv2 = {cmd_list->VtxBuffer[idx2].uv.x,
+                                            cmd_list->VtxBuffer[idx2].uv.y};
+                            
+                            ImVec4 rgba0 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx0].col);
+                            ImVec4 rgba1 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx1].col);
+                            ImVec4 rgba2 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx2].col);
+
+                            //rusterizer()
+                        }
+                    }
+                }
+            }
+        });
+    }    
 }
 
 fn init_imgui() {
     unsafe {
         let w = WIDTH  as u32;
         let h = HEIGHT as u32;
-        let renderer = imgui_renderer as *const ();
+        let renderer = fetch_render_data as *const ();
         cpp!([w as "int32_t", h as "int32_t", renderer as "void *"] {
             typedef void rust_renderer(ImDrawData *data);
             printf("Starting imgui initialization...\n");
@@ -160,10 +233,9 @@ fn init_imgui() {
 }
 
 fn main() {    
-    let mut buffer: Vec<u32> = vec![0; WIDTH * HEIGHT];
     let mut window = Window::new(
         "Sample RGBA32 buffer", WIDTH, HEIGHT, WindowOptions::default()
-    ).unwrap_or_else(|e| { panic!("{}", e); });
+    ).unwrap_or_else(|e| { panic!("{}", e); });       
 
     println!("Renderer version: 0.0.666, x86_64, AVX2");
     println!("========================================");
@@ -175,7 +247,8 @@ fn main() {
     let mut upper_left  = Complex {re: -2.2, im:  1.0};
     let mut lower_right = Complex {re:  1.2, im: -1.0};
     let mut step        = 0.01;
-    render_parallel(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
+    let _buffer = GlobalBuffer;
+    render_parallel(&mut _buffer, (WIDTH, HEIGHT), upper_left, lower_right);
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut need_update = false;
         window.get_keys().map(|keys| {
@@ -218,10 +291,10 @@ fn main() {
                 need_update = true;
             }
             if need_update {
-                render_parallel(&mut buffer, (WIDTH, HEIGHT), upper_left, lower_right);
+                render_parallel(&mut GlobalBuffer, (WIDTH, HEIGHT), upper_left, lower_right);
                 need_update = false;
             }
         });
-        window.update_with_buffer(&buffer).unwrap();
+        window.update_with_buffer(&mut GlobalBuffer).unwrap();
     }
 }
