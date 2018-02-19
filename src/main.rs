@@ -150,8 +150,9 @@ fn draw_triangle(buffer: &mut [u32], p0: Point2DF, p1: Point2DF, p2: Point2DF,
 
 fn fetch_render_data(_im_draw_data: *const ()) {
     let rasterizer = draw_triangle as *const ();
+    let mut buffer_contents = &GlobalBuffer.lock().unwrap();
     unsafe {
-        cpp!([_im_draw_data as "void *", rasterizer as "void *"] {             
+        cpp!([_im_draw_data as "void *", rasterizer as "void *", buffer_contents as "unsigned int *"] {             
             
             struct Point2DF {
                 float X;
@@ -202,7 +203,12 @@ fn fetch_render_data(_im_draw_data: *const ()) {
                             ImVec4 rgba1 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx1].col);
                             ImVec4 rgba2 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx2].col);
 
-                            //rusterizer()
+                            rusterizer(buffer_contents, 
+                                       p0, p1, p2,
+                                       rgba0.x, rgba0.y, rgba0.z, rgba0.w,
+                                       rgba1.x, rgba1.y, rgba1.z, rgba1.w,
+                                       rgba2.x, rgba2.y, rgba2.z, rgba2.w,
+                                       uv0, uv1, uv2);
                         }
                     }
                 }
