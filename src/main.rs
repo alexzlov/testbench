@@ -20,13 +20,12 @@ extern crate libc;
 use minifb::{Key, WindowOptions, Window};
 use num::Complex;
 use simd::{f32x4, u32x4};
-use libc::c_void;
 use std::sync::Mutex;
 
 const WIDTH:       usize = 1024;
 const HEIGHT:      usize = 768;
 const LIMIT:       u32   = 100;
-const NUM_THREADS: usize = 8;
+const NUM_THREADS: usize = 4;
 const COLORS: &'static [(f32, f32, f32)] = &[(0.0,    7.0,    100.0),
                                              (32.0,   107.0,  203.0),
                                              (237.0,  255.0,  255.0),
@@ -120,8 +119,8 @@ fn render(pixels:      &mut [u32],
 }
 
 fn render_parallel(bounds:      (usize, usize),
-                          upper_left:  Complex<f64>,
-                          lower_right: Complex<f64>) {
+                   upper_left:  Complex<f64>,
+                   lower_right: Complex<f64>) {
 
     let rows_per_band = bounds.1 / NUM_THREADS + 1;
     let mut buffer_contents = GlobalBuffer.lock().unwrap();
@@ -140,26 +139,77 @@ fn render_parallel(bounds:      (usize, usize),
     });    
 }
 
-fn draw_triangle(buffer: &mut [u32], p0: Point2DF, p1: Point2DF, p2: Point2DF,
+#[inline]
+fn edge_function(p0: &Point2DF, p1: &Point2DF, p2: &Point2DF) -> f32 {
+    (p1.x - p0.x) * (p2.y - p0.y) - (p1.y - p0.y) * (p2.x - p0.x)
+}
+
+#[inline]
+fn min3(x: f32, y: f32, z: f32) -> f32 {
+    let mut min = x as i32;
+    if (y as i32) < min { min = y as i32; }
+    if (z as i32) < min { min = z as i32; }
+    min as f32
+}
+
+#[inline]
+fn max3(x: f32, y: f32, z: f32) -> f32 {
+    let mut max = x as i32;
+    if (y as i32) > max { max = y as i32; }
+    if (z as i32) > max { max = z as i32; }
+    z as f32
+}
+
+fn draw_triangle(p0: Point2DF, p1: Point2DF, p2: Point2DF,
                  R0: f32, G0: f32, B0: f32, A0: f32,
                  R1: f32, G1: f32, B1: f32, A1: f32,
                  R2: f32, G2: f32, B2: f32, A2: f32,
                  uv0: Point2DF, uv1: Point2DF, uv2: Point2DF) {
-    println!("Rasterizer is not implemented");
+    let area = edge_function(&p0, &p1, &p2);
+    let min_x = min3(p0.x, p1.x, p2.x);
+    let max_x = max3(p0.x, p1.x, p2.x);
+    let min_y = min3(p0.y, p1.y, p2.y);
+    let max_y = max3(p0.y, p1.y, p2.y);
+
+    let mut p_y = min_y;
+    let mut p_x = min_x;
+    while p_y < max_y {
+        while p_x < max_x {
+            let p = Point2DF {x: p_x, y: p_y};
+            let mut w0 = edge_function(&p1, &p2, &p);
+            let mut w1 = edge_function(&p2, &p0, &p);
+            let mut w2 = edge_function(&p0, &p1, &p);
+
+            if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
+                w0 /= area;
+                w1 /= area;
+                w2 /= area;
+                let p_final = Point2D {x: p.x.ceil() as i32, y: p.y.ceil() as i32};
+
+                let MeshR = ((w0 * R0 + w1 * R1 + w2 * R2) * 255.0) as u32;
+                let MeshG = ((w0 * G0 + w1 * G1 + w2 * G2) * 255.0) as u32;
+                let MeshB = ((w0 * B0 + w1 * B1 + w2 * B2) * 255.0) as u32;
+                let MeshA = ((w0 * A0 + w1 * A1 + w2 * A2) * 255.0) as u32;
+                let mut pixels = GlobalBuffer.lock().unwrap();
+                pixels[p_y as usize * WIDTH + p_x as usize] = (MeshR << 16) + (MeshG << 8) + MeshB;
+            }
+            p_x += 1.0;
+        }
+        p_y += 1.0;
+    }
 }
 
 fn fetch_render_data(_im_draw_data: *const ()) {
     let rasterizer = draw_triangle as *const ();
-    let mut buffer_contents = &GlobalBuffer.lock().unwrap();
     unsafe {
-        cpp!([_im_draw_data as "void *", rasterizer as "void *", buffer_contents as "unsigned int *"] {             
+        cpp!([_im_draw_data as "void *", rasterizer as "void *"] {             
             
             struct Point2DF {
                 float X;
                 float Y;
             };
 
-            typedef void DrawTriangle(void *buffer, Point2DF p0, Point2DF p1, Point2DF p2,
+            typedef void DrawTriangle(Point2DF p0, Point2DF p1, Point2DF p2,
                                       float R0, float G0, float B0, float A0,
                                       float R1, float G1, float B1, float A1,
                                       float R2, float G2, float B2, float A2,
@@ -203,8 +253,7 @@ fn fetch_render_data(_im_draw_data: *const ()) {
                             ImVec4 rgba1 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx1].col);
                             ImVec4 rgba2 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx2].col);
 
-                            rusterizer(buffer_contents, 
-                                       p0, p1, p2,
+                            rusterizer(p0, p1, p2,
                                        rgba0.x, rgba0.y, rgba0.z, rgba0.w,
                                        rgba1.x, rgba1.y, rgba1.z, rgba1.w,
                                        rgba2.x, rgba2.y, rgba2.z, rgba2.w,
@@ -253,9 +302,8 @@ fn main() {
     let mut lower_right = Complex {re:  1.2, im: -1.0};
     let mut step        = 0.01;
 
-    unsafe {
-        render_parallel((WIDTH, HEIGHT), upper_left, lower_right);
-    }
+    render_parallel((WIDTH, HEIGHT), upper_left, lower_right);
+
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut need_update = false;
         window.get_keys().map(|keys| {
@@ -298,12 +346,10 @@ fn main() {
                 need_update = true;
             }
             if need_update {
-                unsafe {
-                    render_parallel((WIDTH, HEIGHT), upper_left, lower_right);               
-                }                
+                render_parallel((WIDTH, HEIGHT), upper_left, lower_right);                              
                 need_update = false;
             }
         });
-        unsafe { window.update_with_buffer(&GlobalBuffer.lock().unwrap()).unwrap(); }
+        window.update_with_buffer(&GlobalBuffer.lock().unwrap()).unwrap();
     }
 }
