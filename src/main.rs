@@ -2,7 +2,6 @@
 
 #[macro_use]
 extern crate cpp;
-
 #[macro_use]
 extern crate lazy_static;
 
@@ -22,6 +21,7 @@ use minifb::{Key, WindowOptions, Window};
 use num::Complex;
 use simd::{f32x4, u32x4};
 use libc::c_void;
+use std::sync::Mutex;
 
 const WIDTH:       usize = 1024;
 const HEIGHT:      usize = 768;
@@ -44,7 +44,7 @@ struct Point2DF {
 }
 
 lazy_static! {
-    static ref GlobalBuffer: Vec<u32> = { let mut _buffer = Vec::new(); _buffer };
+    static ref GlobalBuffer: Mutex<Vec<u32>> = Mutex::new(vec![0; WIDTH * HEIGHT]);
 }
 
 fn pixel_to_point(bounds:      (usize, usize),
@@ -119,14 +119,13 @@ fn render(pixels:      &mut [u32],
     }
 }
 
-fn render_parallel(pixels:      &mut Vec<u32>,
-                   bounds:      (usize, usize),
-                   upper_left:  Complex<f64>,
-                   lower_right: 
-                   Complex<f64>) {
+fn render_parallel(bounds:      (usize, usize),
+                          upper_left:  Complex<f64>,
+                          lower_right: Complex<f64>) {
 
     let rows_per_band = bounds.1 / NUM_THREADS + 1;
-    let bands: Vec<&mut [u32]> = pixels.chunks_mut(rows_per_band * bounds.0).collect();
+    let mut buffer_contents = GlobalBuffer.lock().unwrap();
+    let bands: Vec<&mut [u32]> = buffer_contents.chunks_mut(rows_per_band * bounds.0).collect();
     crossbeam::scope(|spawner| {
         for (i, band) in bands.into_iter().enumerate() {
             let top              = rows_per_band * i;
@@ -138,7 +137,7 @@ fn render_parallel(pixels:      &mut Vec<u32>,
                 render(band, band_bounds, band_upper_left, band_lower_right);
             });
         }
-    });
+    });    
 }
 
 fn draw_triangle(buffer: &mut [u32], p0: Point2DF, p1: Point2DF, p2: Point2DF,
@@ -232,7 +231,7 @@ fn init_imgui() {
     }
 }
 
-fn main() {    
+fn main() {
     let mut window = Window::new(
         "Sample RGBA32 buffer", WIDTH, HEIGHT, WindowOptions::default()
     ).unwrap_or_else(|e| { panic!("{}", e); });       
@@ -247,8 +246,10 @@ fn main() {
     let mut upper_left  = Complex {re: -2.2, im:  1.0};
     let mut lower_right = Complex {re:  1.2, im: -1.0};
     let mut step        = 0.01;
-    let _buffer = GlobalBuffer;
-    render_parallel(&mut _buffer, (WIDTH, HEIGHT), upper_left, lower_right);
+
+    unsafe {
+        render_parallel((WIDTH, HEIGHT), upper_left, lower_right);
+    }
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut need_update = false;
         window.get_keys().map(|keys| {
@@ -291,10 +292,12 @@ fn main() {
                 need_update = true;
             }
             if need_update {
-                render_parallel(&mut GlobalBuffer, (WIDTH, HEIGHT), upper_left, lower_right);
+                unsafe {
+                    render_parallel((WIDTH, HEIGHT), upper_left, lower_right);               
+                }                
                 need_update = false;
             }
         });
-        window.update_with_buffer(&mut GlobalBuffer).unwrap();
+        unsafe { window.update_with_buffer(&GlobalBuffer.lock().unwrap()).unwrap(); }
     }
 }
