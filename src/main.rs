@@ -32,11 +32,13 @@ const COLORS: &'static [(f32, f32, f32)] = &[(0.0,    7.0,    100.0),
                                              (255.0,  170.0,  0.0),
                                              (0.0,    2.0,    0.0)];
 
+#[repr(C)]
 struct Point2D {
     x: i32,
     y: i32
 }
 
+#[repr(C)]
 struct Point2DF {
     x: f32,
     y: f32,
@@ -121,7 +123,6 @@ fn render(pixels:      &mut [u32],
 fn render_parallel(bounds:      (usize, usize),
                    upper_left:  Complex<f64>,
                    lower_right: Complex<f64>) {
-
     let rows_per_band = bounds.1 / NUM_THREADS + 1;
     let mut buffer_contents = GlobalBuffer.lock().unwrap();
     let bands: Vec<&mut [u32]> = buffer_contents.chunks_mut(rows_per_band * bounds.0).collect();
@@ -146,56 +147,53 @@ fn edge_function(p0: &Point2DF, p1: &Point2DF, p2: &Point2DF) -> f32 {
 
 #[inline]
 fn min3(x: f32, y: f32, z: f32) -> f32 {
-    let mut min = x as i32;
-    if (y as i32) < min { min = y as i32; }
-    if (z as i32) < min { min = z as i32; }
+    let mut min = x;
+    if y < min { min = y; }
+    if z < min { min = z; }
     min as f32
 }
 
 #[inline]
 fn max3(x: f32, y: f32, z: f32) -> f32 {
-    let mut max = x as i32;
-    if (y as i32) > max { max = y as i32; }
-    if (z as i32) > max { max = z as i32; }
-    z as f32
+    let mut max = x;
+    if y > max { max = y; }
+    if z > max { max = z; }
+    max as f32
 }
 
-fn draw_triangle(p0: Point2DF, p1: Point2DF, p2: Point2DF,
+fn draw_triangle(p0: &Point2DF, p1: &Point2DF, p2: &Point2DF,
                  R0: f32, G0: f32, B0: f32, A0: f32,
                  R1: f32, G1: f32, B1: f32, A1: f32,
                  R2: f32, G2: f32, B2: f32, A2: f32,
-                 uv0: Point2DF, uv1: Point2DF, uv2: Point2DF) {
+                 uv0: &Point2DF, uv1: &Point2DF, uv2: &Point2DF) {
     let area = edge_function(&p0, &p1, &p2);
     let min_x = min3(p0.x, p1.x, p2.x);
     let max_x = max3(p0.x, p1.x, p2.x);
     let min_y = min3(p0.y, p1.y, p2.y);
     let max_y = max3(p0.y, p1.y, p2.y);
 
-    let mut p_y = min_y;
-    let mut p_x = min_x;
-    while p_y < max_y {
-        while p_x < max_x {
-            let p = Point2DF {x: p_x, y: p_y};
+    let mut p_y = min_y.ceil() as i32;
+    let mut p_x = min_x.ceil() as i32;
+    for y in min_y.ceil() as i32 .. max_y.ceil() as i32 {
+        for x in min_x.ceil() as i32 .. max_x.ceil() as i32 {
+            let p = Point2DF {x: x as f32, y: y as f32};
             let mut w0 = edge_function(&p1, &p2, &p);
             let mut w1 = edge_function(&p2, &p0, &p);
             let mut w2 = edge_function(&p0, &p1, &p);
 
-            if w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0 {
+            if (w0 >= 0.0 && w1 >= 0.0 && w2 >= 0.0) {
                 w0 /= area;
                 w1 /= area;
                 w2 /= area;
-                let p_final = Point2D {x: p.x.ceil() as i32, y: p.y.ceil() as i32};
 
                 let MeshR = ((w0 * R0 + w1 * R1 + w2 * R2) * 255.0) as u32;
                 let MeshG = ((w0 * G0 + w1 * G1 + w2 * G2) * 255.0) as u32;
                 let MeshB = ((w0 * B0 + w1 * B1 + w2 * B2) * 255.0) as u32;
                 let MeshA = ((w0 * A0 + w1 * A1 + w2 * A2) * 255.0) as u32;
                 let mut pixels = GlobalBuffer.lock().unwrap();
-                pixels[p_y as usize * WIDTH + p_x as usize] = (MeshR << 16) + (MeshG << 8) + MeshB;
+                pixels[y as usize * WIDTH + x as usize] = (MeshR << 16) + (MeshG << 8) + MeshB;
             }
-            p_x += 1.0;
         }
-        p_y += 1.0;
     }
 }
 
@@ -209,16 +207,19 @@ fn fetch_render_data(_im_draw_data: *const ()) {
                 float Y;
             };
 
-            typedef void DrawTriangle(Point2DF p0, Point2DF p1, Point2DF p2,
+            typedef void DrawTriangle(Point2DF* p0, Point2DF* p1, Point2DF* p2,
                                       float R0, float G0, float B0, float A0,
                                       float R1, float G1, float B1, float A1,
                                       float R2, float G2, float B2, float A2,
-                                      Point2DF uv0, Point2DF uv1, Point2DF uv2);      
+                                      Point2DF* uv0, Point2DF* uv1, Point2DF* uv2);      
             DrawTriangle *rusterizer = (DrawTriangle *) rasterizer;
             ImGuiIO& io = ImGui::GetIO();
             int fb_width  = (int)(io.DisplaySize.x * io.DisplayFramebufferScale.x);
             int fb_height = (int)(io.DisplaySize.y * io.DisplayFramebufferScale.y);
-            if (fb_width == 0 || fb_height == 0) return;
+            if (fb_width == 0 || fb_height == 0) {
+                printf("Skip frame\n");
+                return;
+            }
             ImDrawData *data = (ImDrawData *)_im_draw_data;
             data->ScaleClipRects(io.DisplayFramebufferScale);
             for (int n = 0; n < data->CmdListsCount; n++) {
@@ -252,14 +253,14 @@ fn fetch_render_data(_im_draw_data: *const ()) {
                             ImVec4 rgba0 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx0].col);
                             ImVec4 rgba1 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx1].col);
                             ImVec4 rgba2 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx2].col);
-
-                            rusterizer(p0, p1, p2,
+                            rusterizer(&p0, &p1, &p2,
                                        rgba0.x, rgba0.y, rgba0.z, rgba0.w,
                                        rgba1.x, rgba1.y, rgba1.z, rgba1.w,
                                        rgba2.x, rgba2.y, rgba2.z, rgba2.w,
-                                       uv0, uv1, uv2);
+                                       &uv0, &uv1, &uv2);
                         }
                     }
+                    IndexOffset += ElementCount;
                 }
             }
         });
@@ -301,32 +302,31 @@ fn main() {
     let mut upper_left  = Complex {re: -2.2, im:  1.0};
     let mut lower_right = Complex {re:  1.2, im: -1.0};
     let mut step        = 0.01;
-
     render_parallel((WIDTH, HEIGHT), upper_left, lower_right);
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut need_update = false;
-        window.get_keys().map(|keys| {
-            let w = WIDTH  as u32;
-            let h = HEIGHT as u32;
-            unsafe {   
-                cpp!([w as "int32_t", h as "int32_t"] {
-                    ImGuiIO& io = ImGui::GetIO();
-                    io.DisplaySize = ImVec2(w, h); 
-                    ImGui::NewFrame();
-                    ImGui::Begin("Stats", 0);
-                    ImGui::SetWindowPos("Stats", ImVec2(10, 10));
-                    ImGui::SetWindowSize(ImVec2(300, 85));
-                    
-                    ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-                    ImGui::Text("Milliseconds per frame: ");
-                    ImGui::PopStyleColor();
+        let w = WIDTH  as u32;
+        let h = HEIGHT as u32;
+        unsafe {   
+            cpp!([w as "int32_t", h as "int32_t"] {
+                ImGuiIO& io = ImGui::GetIO();
+                io.DisplaySize = ImVec2(w, h); 
+                ImGui::NewFrame();
+                ImGui::Begin("Stats", 0);
+                ImGui::SetWindowPos("Stats", ImVec2(10, 10));
+                ImGui::SetWindowSize(ImVec2(300, 85));
+                
+                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+                ImGui::Text("Milliseconds per frame: ");
+                ImGui::PopStyleColor();
 
-                    ImGui::End();
-                    ImGui::Render();
-                    ImGui::EndFrame();
-                });
-            }
+                ImGui::End();
+                ImGui::Render();
+                ImGui::EndFrame();
+            });
+        }
+        window.get_keys().map(|keys| {            
             for k in keys {
                 match k {
                     Key::Left  => {upper_left.re -= step; lower_right.re -= step;},
@@ -347,7 +347,7 @@ fn main() {
             }
             if need_update {
                 render_parallel((WIDTH, HEIGHT), upper_left, lower_right);                              
-                need_update = false;
+                need_update = false;                
             }
         });
         window.update_with_buffer(&GlobalBuffer.lock().unwrap()).unwrap();

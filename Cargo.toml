@@ -17,7 +17,7 @@ cpp_build = "0.3"
 gcc = ""
 
 [profile.dev]
-opt-level = 3
+opt-level = 0
 debug = true
 #lto = true
 codegen-units = 2
