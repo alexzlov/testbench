@@ -191,7 +191,11 @@ fn draw_triangle(p0: &Point2DF, p1: &Point2DF, p2: &Point2DF,
                 let MeshB = ((w0 * B0 + w1 * B1 + w2 * B2) * 255.0) as u32;
                 let MeshA = ((w0 * A0 + w1 * A1 + w2 * A2) * 255.0) as u32;
                 let mut pixels = GlobalBuffer.lock().unwrap();
-                pixels[y as usize * WIDTH + x as usize] = (MeshR << 16) + (MeshG << 8) + MeshB;
+                let pixel_index = y as usize * WIDTH + x as usize;
+
+                let background_color = pixels[pixel_index];
+
+                pixels[pixel_index] = (MeshR << 16) + (MeshG << 8) + MeshB;
             }
         }
     }
@@ -236,12 +240,12 @@ fn fetch_render_data(_im_draw_data: *const ()) {
                             unsigned int idx1 = cmd_list->IdxBuffer[IndexOffset + i + 1];
                             unsigned int idx2 = cmd_list->IdxBuffer[IndexOffset + i + 2];
 
-                            Point2DF p0 = {cmd_list->VtxBuffer[idx0].pos.x,
-                                           cmd_list->VtxBuffer[idx0].pos.y};
-                            Point2DF p1 = {cmd_list->VtxBuffer[idx1].pos.x,
-                                           cmd_list->VtxBuffer[idx1].pos.y};
-                            Point2DF p2 = {cmd_list->VtxBuffer[idx2].pos.x,
-                                           cmd_list->VtxBuffer[idx2].pos.y};
+                            Point2DF p0  = {cmd_list->VtxBuffer[idx0].pos.x,
+                                            cmd_list->VtxBuffer[idx0].pos.y};
+                            Point2DF p1  = {cmd_list->VtxBuffer[idx1].pos.x,
+                                            cmd_list->VtxBuffer[idx1].pos.y};
+                            Point2DF p2  = {cmd_list->VtxBuffer[idx2].pos.x,
+                                            cmd_list->VtxBuffer[idx2].pos.y};
 
                             Point2DF uv0 = {cmd_list->VtxBuffer[idx0].uv.x,
                                             cmd_list->VtxBuffer[idx0].uv.y};
@@ -253,6 +257,7 @@ fn fetch_render_data(_im_draw_data: *const ()) {
                             ImVec4 rgba0 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx0].col);
                             ImVec4 rgba1 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx1].col);
                             ImVec4 rgba2 = ImGui::ColorConvertU32ToFloat4(cmd_list->VtxBuffer[idx2].col);
+                            
                             rusterizer(&p0, &p1, &p2,
                                        rgba0.x, rgba0.y, rgba0.z, rgba0.w,
                                        rgba1.x, rgba1.y, rgba1.z, rgba1.w,
@@ -287,6 +292,29 @@ fn init_imgui() {
     }
 }
 
+fn render_stats() {
+    let w = WIDTH  as u32;
+    let h = HEIGHT as u32;
+    unsafe {   
+        cpp!([w as "int32_t", h as "int32_t"] {
+            ImGuiIO& io = ImGui::GetIO();
+            io.DisplaySize = ImVec2(w, h); 
+            ImGui::NewFrame();
+            ImGui::Begin("Stats", 0);
+            ImGui::SetWindowPos("Stats", ImVec2(10, 10));
+            ImGui::SetWindowSize(ImVec2(300, 85));
+            
+            ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
+            ImGui::Text("Milliseconds per frame: ");
+            ImGui::PopStyleColor();
+
+            ImGui::End();
+            ImGui::Render();
+            ImGui::EndFrame();
+        });
+    }
+}
+
 fn main() {
     let mut window = Window::new(
         "Sample RGBA32 buffer", WIDTH, HEIGHT, WindowOptions::default()
@@ -306,26 +334,7 @@ fn main() {
 
     while window.is_open() && !window.is_key_down(Key::Escape) {
         let mut need_update = false;
-        let w = WIDTH  as u32;
-        let h = HEIGHT as u32;
-        unsafe {   
-            cpp!([w as "int32_t", h as "int32_t"] {
-                ImGuiIO& io = ImGui::GetIO();
-                io.DisplaySize = ImVec2(w, h); 
-                ImGui::NewFrame();
-                ImGui::Begin("Stats", 0);
-                ImGui::SetWindowPos("Stats", ImVec2(10, 10));
-                ImGui::SetWindowSize(ImVec2(300, 85));
-                
-                ImGui::PushStyleColor(ImGuiCol_Text, ImVec4(1.0f, 0.2f, 0.2f, 1.0f));
-                ImGui::Text("Milliseconds per frame: ");
-                ImGui::PopStyleColor();
-
-                ImGui::End();
-                ImGui::Render();
-                ImGui::EndFrame();
-            });
-        }
+        render_stats();
         window.get_keys().map(|keys| {            
             for k in keys {
                 match k {
@@ -346,7 +355,8 @@ fn main() {
                 need_update = true;
             }
             if need_update {
-                render_parallel((WIDTH, HEIGHT), upper_left, lower_right);                              
+                render_parallel((WIDTH, HEIGHT), upper_left, lower_right);
+                render_stats();
                 need_update = false;                
             }
         });
